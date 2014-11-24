@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
@@ -33,7 +34,10 @@ import Control.Lens hiding (Contains)
 import Control.Monad
 import Control.Monad.Error.Class
 import Control.Monad.Trace.Class
+import Control.Monad.Trace.ErrorTrace
+import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.Trace
 import Data.Monoid
 import Prelude.Unicode
 
@@ -107,6 +111,7 @@ data Refutation
   | ExpectedPiType
   | ExpectedSumType
   | ExpectedIdentityType
+  | ExpectedType
   | CompoundRefutation [Refutation]
   | InvalidUniverse
   | UniverseCycle
@@ -272,7 +277,7 @@ instance Judgement (Hypothetical IsType) Int where
       judge $ γ ⊢ n :⇐ α
       return l
 
-  judge j = trace j $ throwError NotImplemented
+  judge j = trace j $ throwError ExpectedType
 
 instance Judgement (Hypothetical Inf) Tm where
   judge j@(γ :⊢ Inf (V x)) =
@@ -334,7 +339,7 @@ instance Judgement (Hypothetical Chk) () where
   judge j@(γ :⊢ τ :⇐ Univ n) =
     trace j $ do
       l ← judge $ γ ⊢ IsType (eval τ)
-      unless (l < n) $
+      unless (l < succ n) $
         throwError UniverseCycle
   judge j@(γ :⊢ Inl m :⇐ Plus α β) =
     trace j $ do
@@ -414,6 +419,25 @@ step = \case
   IdPeel xypc m ud → do
     IdPeel xypc <$> step m <*> pure ud
   _ → mzero
+
+newtype Judge α
+  = Judge
+  { _judge ∷ TraceT TraceTag Refutation FreshM α
+  } deriving (Monad, Functor, Alternative, Applicative, MonadTrace TraceTag, MonadError Refutation)
+
+instance Fresh Judge where
+  fresh = Judge ∘ lift ∘ fresh
+
+runJudge
+  ∷ Judge α
+  → Either (ErrorTrace TraceTag Refutation) α
+runJudge = runFreshM ∘ runTraceT ∘ _judge
+
+testFailure ∷ Judge ()
+testFailure = judge $ Empty ⊢ Refl Ax :⇐ Id (Plus Unit Unit) (Ax,Ax)
+
+testFailure2 ∷ Judge ()
+testFailure2 = judge $ Empty ⊢ Inl Ax :⇐ Plus Unit Ax
 
 -- | Thanks to Stephanie Weirich for this nice way to do small-step CBV
 -- operational semantics.
