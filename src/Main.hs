@@ -34,6 +34,7 @@ import Control.Monad
 import Control.Monad.Error.Class
 import Control.Monad.Trace.Class
 import Control.Monad.Trans.Maybe
+import Data.Monoid
 import Prelude.Unicode
 
 import Unbound.LocallyNameless hiding (Equal, to)
@@ -102,7 +103,19 @@ data Refutation
   | NoSuchVariable (Name Tm)
   | ExpectedPiType
   | ExpectedSumType
+  | CompoundRefutation [Refutation]
   deriving Show
+
+instance Monoid Refutation where
+  mempty = CompoundRefutation []
+  mappend (CompoundRefutation rs) (CompoundRefutation rs') =
+    CompoundRefutation $ mappend rs rs'
+  mappend (CompoundRefutation rs) r =
+    CompoundRefutation $ rs ++ [r]
+  mappend r (CompoundRefutation rs) =
+    CompoundRefutation $ r:rs
+  mappend r r' =
+    CompoundRefutation [r,r']
 
 type MonadJudge m
   = ( MonadTrace TraceTag m
