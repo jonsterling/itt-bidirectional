@@ -109,6 +109,7 @@ data Refutation
   | ExpectedIdentityType
   | CompoundRefutation [Refutation]
   | InvalidUniverse
+  | UniverseCycle
   deriving Show
 
 instance Monoid Refutation where
@@ -284,11 +285,11 @@ instance Judgement (Hypothetical Inf) Tm where
   judge (_ :⊢ Inf Unit) = return $ Univ 0
   judge (_ :⊢ Inf Void) = return $ Univ 0
   judge (γ :⊢ Inf τ@Plus{}) =
-    Univ <$> judge (γ ⊢ IsType τ)
+    Univ <$> judge (γ ⊢ IsType (eval τ))
   judge (γ :⊢ Inf τ@Pi{}) =
-    Univ <$> judge (γ ⊢ IsType τ)
+    Univ <$> judge (γ ⊢ IsType (eval τ))
   judge (γ :⊢ Inf τ@Id{}) =
-    Univ <$> judge (γ ⊢ IsType τ)
+    Univ <$> judge (γ ⊢ IsType (eval τ))
   judge (_ :⊢ Inf Ax) = return Unit
   judge j@(γ :⊢ Inf (Refl m)) =
     trace j $ do
@@ -308,7 +309,7 @@ instance Judgement (Hypothetical Inf) Tm where
       (α, β) ← τ ^? _Plus <?> ExpectedSumType
       (x,c) ← unbind xc
       (u,l) ← unbind ul
-      _ ← judge $ γ >: (x :∈ τ) ⊢ IsType c
+      _ ← judge $ γ >: (x :∈ τ) ⊢ IsType (eval c)
       judge $ γ >: (u :∈ α) ⊢ l :⇐ subst x (Inl (V u)) c
       (v,r) ← unbind vr
       judge $ γ >: (v :∈ β) ⊢ r :⇐ subst x (Inr (V v)) c
@@ -320,7 +321,7 @@ instance Judgement (Hypothetical Inf) Tm where
       ((x,y,p), c) ← unbind xypc
       _ ← judge $
         let δ = γ >: (x :∈ α) >: (y :∈ α) >: (p :∈ Id α (V x, V y))
-        in δ ⊢ IsType c
+        in δ ⊢ IsType (eval c)
       (u, r) ← unbind ur
       judge $
         let cuu = subst x (V u) $ subst y (V u) $ subst p (Refl (V u)) c
@@ -330,15 +331,20 @@ instance Judgement (Hypothetical Inf) Tm where
   judge j = trace j $ throwError NotImplemented
 
 instance Judgement (Hypothetical Chk) () where
+  judge j@(γ :⊢ τ :⇐ Univ n) =
+    trace j $ do
+      l ← judge $ γ ⊢ IsType (eval τ)
+      unless (l < n) $
+        throwError UniverseCycle
   judge j@(γ :⊢ Inl m :⇐ Plus α β) =
     trace j $ do
       judge $ γ ⊢ m :⇐ α
-      _ ← wf ∘ judge $ γ ⊢ IsType β
+      _ ← wf ∘ judge $ γ ⊢ IsType (eval β)
       return ()
   judge j@(γ :⊢ Inr m :⇐ Plus α β) =
     trace j $ do
       judge $ γ ⊢ m :⇐ β
-      _ ← wf ∘ judge $ γ ⊢ IsType α
+      _ ← wf ∘ judge $ γ ⊢ IsType (eval α)
       return ()
   judge j@(γ :⊢ Lam xm :⇐ Pi α yβ) =
     trace j $ do
@@ -368,8 +374,8 @@ instance Judgement (Hypothetical Equal) () where
 instance Judgement (Hypothetical EqualTypes) Int where
   judge j@(γ :⊢ EqualTypes α β) =
     trace j $ do
-      l ← judge $ γ ⊢ IsType α
-      l' ← judge $ γ ⊢ IsType β
+      l ← judge $ γ ⊢ IsType (eval α)
+      l' ← judge $ γ ⊢ IsType (eval β)
       let l'' = max l l'
       judge $ γ ⊢ Equal (Univ l'') (α, β)
       return l''
