@@ -46,7 +46,7 @@ data Tm
   | Void
   | Unit
   | Ax
-  | Univ
+  | Univ Int
   | Plus Tm Tm
   | Pi Tm (Bind (Name Tm) Tm)
   | Lam (Bind (Name Tm) Tm)
@@ -104,6 +104,7 @@ data Refutation
   | ExpectedPiType
   | ExpectedSumType
   | CompoundRefutation [Refutation]
+  | InvalidUniverse
   deriving Show
 
 instance Monoid Refutation where
@@ -141,8 +142,12 @@ data Inf
   deriving Show
 data Equal
   = Equal Tm (Tm, Tm)
+data EqualTypes
+  = EqualTypes Tm Tm
 data Contains
   = Contains Tele (Name Tm)
+data IsType
+  = IsType Tm
 
 infixl 9 :⇐
 pattern m :⇐ α = Chk m α
@@ -160,18 +165,30 @@ instance Show Equal where
     showParen (i > 10) $
       shows m ∘ (" = " ++) ∘ shows n ∘ (" : " ++) ∘ shows α
 
+instance Show EqualTypes where
+  showsPrec i (EqualTypes α β) =
+    showParen (i > 10) $
+      shows α ∘ (" = " ++) ∘ shows β ∘ (" type" ++)
+
 instance Show Contains where
   showsPrec i (Contains γ x) =
     showParen (i > 10) $
       shows γ ∘ (" ∈ " ++) ∘ shows x
 
-derive [''Tm, ''Tele, ''Hyp, ''Chk, ''Inf, ''Equal]
+instance Show IsType where
+  showsPrec i (IsType α) =
+    showParen (i > 10) $
+      shows α ∘ (" type" ++)
+
+derive [''Tm, ''Tele, ''Hyp, ''Chk, ''Inf, ''Equal, ''IsType, ''EqualTypes]
 instance Alpha Tm
 instance Alpha Tele
 instance Alpha Hyp
 instance Alpha Chk
 instance Alpha Inf
 instance Alpha Equal
+instance Alpha IsType
+instance Alpha EqualTypes
 
 instance Subst Tm Tm where
   isvar m = m ^? _V . to SubstName
@@ -227,23 +244,35 @@ instance Judgement Contains Tm where
     | otherwise = trace j ∘ judge $ γ :∋ x
   judge _ = error "This is total"
 
+instance Judgement (Hypothetical IsType) Int where
+  judge j@(_ :⊢ IsType (Univ n))
+    | n ≥ 0 = return $ succ n
+    | otherwise = trace j $ throwError InvalidUniverse
+  judge (_ :⊢ IsType Unit) = return 0
+  judge (_ :⊢ IsType Void) = return 0
+  judge j@(γ :⊢ IsType (Plus α β)) =
+    trace j $ max
+      <$> judge (γ ⊢ IsType α)
+      <*> judge (γ ⊢ IsType β)
+  judge j@(γ :⊢ IsType (Pi α xβ)) =
+    trace j $ do max
+      <$> judge (γ ⊢ IsType α)
+      <*> do
+        (x, β) ← unbind xβ
+        judge $ γ >: (x :∈ α) ⊢ IsType β
+
+  judge j = trace j $ throwError NotImplemented
+
 instance Judgement (Hypothetical Inf) Tm where
-  judge (_ :⊢ Inf Univ) = return Univ
-  judge (_ :⊢ Inf Unit) = return Univ
-  judge (_ :⊢ Inf Void) = return Univ
   judge j@(γ :⊢ Inf (V x)) =
     trace j ∘ judge $ γ :∋ x
-  judge j@(γ :⊢ Inf (Plus α β)) =
-    trace j $ do
-      judge $ γ ⊢ α :⇐ Univ
-      judge $ γ ⊢ β :⇐ Univ
-      return Univ
-  judge j@(γ :⊢ Inf (Pi α xβ)) =
-    trace j $ do
-      judge $ γ ⊢ α :⇐ Univ
-      (x, β) ← unbind xβ
-      judge $ γ >: (x :∈ α) ⊢ β :⇐ Univ
-      return Univ
+  judge (_ :⊢ Inf (Univ n)) = return $ Univ (succ n)
+  judge (_ :⊢ Inf Unit) = return $ Univ 0
+  judge (_ :⊢ Inf Void) = return $ Univ 0
+  judge (γ :⊢ Inf τ@Plus{}) =
+    Univ <$> judge (γ ⊢ IsType τ)
+  judge (γ :⊢ Inf τ@Pi{}) =
+    Univ <$> judge (γ ⊢ IsType τ)
   judge (_ :⊢ Inf Ax) = return Unit
   judge j@(γ :⊢ Inf (App m n)) =
     trace j $ do
@@ -269,15 +298,18 @@ instance Judgement (Hypothetical Chk) () where
   judge j@(γ :⊢ Inl m :⇐ Plus α β) =
     trace j $ do
       judge $ γ ⊢ m :⇐ α
-      wf ∘ judge $ γ ⊢ β :⇐ Univ
+      _ ← wf ∘ judge $ γ ⊢ IsType β
+      return ()
   judge j@(γ :⊢ Inr m :⇐ Plus α β) =
     trace j $ do
       judge $ γ ⊢ m :⇐ β
-      wf ∘ judge $ γ ⊢ α :⇐ Univ
+      _ ← wf ∘ judge $ γ ⊢ IsType α
+      return ()
   judge j@(γ :⊢ m :⇐ α) =
     trace j $ do
       α' ← judge $ γ ⊢ Inf m
-      wf ∘ judge $ γ ⊢ Equal Univ (α, α')
+      _ ← wf ∘ judge $ γ ⊢ EqualTypes α α'
+      return ()
   judge _ = error "This is total"
 
 instance Judgement (Hypothetical Equal) () where
@@ -287,6 +319,16 @@ instance Judgement (Hypothetical Equal) () where
       judge $ γ ⊢ n :⇐ α
       unless (eval m `aeq` eval n) ∘ throwError $
         NotEqual m n
+  judge _ = error "This is total"
+
+instance Judgement (Hypothetical EqualTypes) Int where
+  judge j@(γ :⊢ EqualTypes α β) =
+    trace j $ do
+      l ← judge $ γ ⊢ IsType α
+      l' ← judge $ γ ⊢ IsType β
+      let l'' = max l l'
+      judge $ γ ⊢ Equal (Univ l'') (α, β)
+      return l''
   judge _ = error "This is total"
 
 step
