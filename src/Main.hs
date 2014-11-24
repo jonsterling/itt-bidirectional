@@ -21,6 +21,10 @@
 -- It is written using Weirich's Unbound, mainly because it was easy enough to
 -- use and fighting Bound to work with contexts was not something I wanted to
 -- spend time on.
+--
+-- This has very good error-reporting: that is, all whenever we attempt to
+-- verify a judgement, we leave a breadcrumb behind such that if we refute the
+-- judgement, we know exactly where that occured.
 
 module Main where
 
