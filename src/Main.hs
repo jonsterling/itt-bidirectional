@@ -55,6 +55,7 @@ data Tm
   | Decide (Bind (Name Tm) Tm) Tm (Bind (Name Tm) Tm) (Bind (Name Tm) Tm)
   | Id Tm (Tm, Tm)
   | Refl Tm
+  | IdPeel (Bind (Name Tm, Name Tm, Name Tm) Tm) Tm (Bind (Name Tm) Tm)
   deriving Show
 
 makePrisms ''Tm
@@ -105,6 +106,7 @@ data Refutation
   | NoSuchVariable (Name Tm)
   | ExpectedPiType
   | ExpectedSumType
+  | ExpectedIdentityType
   | CompoundRefutation [Refutation]
   | InvalidUniverse
   deriving Show
@@ -274,6 +276,10 @@ instance Judgement (Hypothetical IsType) Int where
 instance Judgement (Hypothetical Inf) Tm where
   judge j@(γ :⊢ Inf (V x)) =
     trace j ∘ judge $ γ :∋ x
+  judge j@(γ :⊢ Inf (Ann m α)) =
+    trace j $ do
+      judge $ γ ⊢ m :⇐ α
+      return α
   judge (_ :⊢ Inf (Univ n)) = return $ Univ (succ n)
   judge (_ :⊢ Inf Unit) = return $ Univ 0
   judge (_ :⊢ Inf Void) = return $ Univ 0
@@ -302,10 +308,24 @@ instance Judgement (Hypothetical Inf) Tm where
       (α, β) ← τ ^? _Plus <?> ExpectedSumType
       (x,c) ← unbind xc
       (u,l) ← unbind ul
+      _ ← judge $ γ >: (x :∈ τ) ⊢ IsType c
       judge $ γ >: (u :∈ α) ⊢ l :⇐ subst x (Inl (V u)) c
       (v,r) ← unbind vr
       judge $ γ >: (v :∈ β) ⊢ r :⇐ subst x (Inr (V v)) c
       return $ subst x m c
+  judge j@(γ :⊢ Inf (IdPeel xypc idp ur)) =
+    trace j $ do
+      τ ← judge $ γ ⊢ Inf idp
+      (α, (m, n)) ← τ ^? _Id <?> ExpectedIdentityType
+      ((x,y,p), c) ← unbind xypc
+      _ ← judge $
+        let δ = γ >: (x :∈ α) >: (y :∈ α) >: (p :∈ Id α (V x, V y))
+        in δ ⊢ IsType c
+      (u, r) ← unbind ur
+      judge $
+        let cuu = subst x (V u) $ subst y (V u) $ subst p (Refl (V u)) c
+        in γ >: (u :∈ α) ⊢ r :⇐ cuu
+      return ∘ eval ∘ subst x m ∘ subst y n $ subst p idp c
 
   judge j = trace j $ throwError NotImplemented
 
