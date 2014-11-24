@@ -402,6 +402,11 @@ step = \case
     return $ subst v m r
   Decide xc m ul vr →
     Decide xc <$> step m <*> pure ul <*> pure vr
+  IdPeel _ (Refl m) ud → do
+    (u,d) ← unbind ud
+    return $ subst u m d
+  IdPeel xypc m ud → do
+    IdPeel xypc <$> step m <*> pure ud
   _ → mzero
 
 -- | Thanks to Stephanie Weirich for this nice way to do small-step CBV
