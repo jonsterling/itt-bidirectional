@@ -69,7 +69,10 @@ instance Judgement (Hypothetical IsType) Int where
       judge $ γ ⊢ m :⇐ α
       judge $ γ ⊢ n :⇐ α
       return l
-
+  judge j@(γ :⊢ IsType (V x)) =
+    trace j $ do
+      τ ← judge $ γ :∋ x
+      τ ^? _Univ <?> ExpectedUniverse
   judge j = trace j $ throwError ExpectedType
 
 instance Judgement (Hypothetical Inf) Tm where
@@ -178,8 +181,6 @@ instance Judgement (Hypothetical EqualTypes) Int where
       judge $ γ ⊢ Equal (Univ l'') (α, β)
       return l''
   judge _ = error "This is total"
-
-
 
 instance Show Chk where
   showsPrec i (Chk m α) =

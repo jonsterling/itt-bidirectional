@@ -45,6 +45,7 @@ data Refutation
   | ExpectedSumType
   | ExpectedIdentityType
   | ExpectedType
+  | ExpectedUniverse
   | CompoundRefutation [Refutation]
   | InvalidUniverse
   | UniverseCycle

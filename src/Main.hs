@@ -64,3 +64,12 @@ testFailure = judge $ Empty ⊢ Refl Ax :⇐ Id (Plus Unit Unit) (Ax,Ax)
 testFailure2 ∷ Judge ()
 testFailure2 = judge $ Empty ⊢ Inl Ax :⇐ Plus Unit Ax
 
+test ∷ Judge ()
+test = do
+  let tm = Lam $ bind (string2Name "α") $
+             Lam $ bind (string2Name "x") $
+               Inl (V $ string2Name "x")
+  let ty = Pi (Univ 0) $ bind (string2Name "α") $
+             Pi (V $ string2Name "α") $ bind (string2Name "x") $
+               Plus (V $ string2Name "α") Unit
+  judge $ Empty ⊢ tm :⇐ ty
