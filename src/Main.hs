@@ -71,7 +71,7 @@ data Tele
 
 makePrisms ''Tele
 
-pattern γ :> h <- Cons (unrebind → (h, γ))
+pattern γ :> h ← Cons (unrebind → (h, γ))
 pattern x :∈ α = Hyp x (Embed α)
 
 instance Show Tele where
@@ -91,7 +91,7 @@ data Hypothetical j where
     → Hypothetical j
 
 infixl 8 :⊢
-pattern γ :⊢ j <- Hypothetical (unrebind → (j, γ))
+pattern γ :⊢ j ← Hypothetical (unrebind → (j, γ))
 
 data TraceTag where
   Wellformedness ∷ TraceTag
