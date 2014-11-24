@@ -72,7 +72,7 @@ pattern x :∈ α = Hyp x (Embed α)
 instance Show Tele where
   showsPrec _ Empty = ("·" ++)
   showsPrec i (γ :> h) =
-    showParen (i < 10) $
+    showParen (i > 10) $
       shows γ ∘ (", " ++) ∘ shows h
   showsPrec _ _ = error "This is total"
 
@@ -135,17 +135,17 @@ pattern γ :∋ x = Contains γ x
 
 instance Show Chk where
   showsPrec i (Chk m α) =
-    showParen (i < 10) $
+    showParen (i > 10) $
       shows m ∘ (" ⇐ " ++) ∘ shows α
 
 instance Show Equal where
   showsPrec i (Equal α (m,n)) =
-    showParen (i < 10) $
+    showParen (i > 10) $
       shows m ∘ (" = " ++) ∘ shows n ∘ (" : " ++) ∘ shows α
 
 instance Show Contains where
   showsPrec i (Contains γ x) =
-    showParen (i < 10) $
+    showParen (i > 10) $
       shows γ ∘ (" ∈ " ++) ∘ shows x
 
 derive [''Tm, ''Tele, ''Hyp, ''Chk, ''Inf, ''Equal]
