@@ -37,7 +37,7 @@ import Control.Monad.Trans.Maybe
 import Data.Monoid
 import Prelude.Unicode
 
-import Unbound.LocallyNameless hiding (Equal, to)
+import Unbound.LocallyNameless hiding (Equal, Refl, to)
 
 data Tm
   = V (Name Tm)
@@ -53,6 +53,8 @@ data Tm
   | Inl Tm
   | Inr Tm
   | Decide (Bind (Name Tm) Tm) Tm (Bind (Name Tm) Tm) (Bind (Name Tm) Tm)
+  | Id Tm (Tm, Tm)
+  | Refl Tm
   deriving Show
 
 makePrisms ''Tm
@@ -255,11 +257,17 @@ instance Judgement (Hypothetical IsType) Int where
       <$> judge (γ ⊢ IsType α)
       <*> judge (γ ⊢ IsType β)
   judge j@(γ :⊢ IsType (Pi α xβ)) =
-    trace j $ do max
+    trace j $ max
       <$> judge (γ ⊢ IsType α)
       <*> do
         (x, β) ← unbind xβ
         judge $ γ >: (x :∈ α) ⊢ IsType β
+  judge j@(γ :⊢ IsType (Id α (m, n))) =
+    trace j $ do
+      l ← judge $ γ ⊢ IsType α
+      judge $ γ ⊢ m :⇐ α
+      judge $ γ ⊢ n :⇐ α
+      return l
 
   judge j = trace j $ throwError NotImplemented
 
@@ -273,7 +281,14 @@ instance Judgement (Hypothetical Inf) Tm where
     Univ <$> judge (γ ⊢ IsType τ)
   judge (γ :⊢ Inf τ@Pi{}) =
     Univ <$> judge (γ ⊢ IsType τ)
+  judge (γ :⊢ Inf τ@Id{}) =
+    Univ <$> judge (γ ⊢ IsType τ)
   judge (_ :⊢ Inf Ax) = return Unit
+  judge j@(γ :⊢ Inf (Refl m)) =
+    trace j $ do
+      α ← judge $ γ ⊢ Inf m
+      let m' = eval m
+      return $ Id (eval α) (m', m')
   judge j@(γ :⊢ Inf (App m n)) =
     trace j $ do
       τ ← judge $ γ ⊢ Inf m
@@ -305,6 +320,15 @@ instance Judgement (Hypothetical Chk) () where
       judge $ γ ⊢ m :⇐ β
       _ ← wf ∘ judge $ γ ⊢ IsType α
       return ()
+  judge j@(γ :⊢ Lam xm :⇐ Pi α yβ) =
+    trace j $ do
+      (x, m) ← unbind xm
+      (y, β) ← unbind yβ
+      judge $ γ >: (x :∈ α) ⊢ m :⇐ subst y (V x) β
+  judge j@(γ :⊢ Refl m :⇐ Id α (n, n')) =
+    trace j $ do
+      judge $ γ ⊢ Equal α (m, n)
+      judge $ γ ⊢ Equal α (m, n')
   judge j@(γ :⊢ m :⇐ α) =
     trace j $ do
       α' ← judge $ γ ⊢ Inf m
@@ -340,6 +364,7 @@ step
 step = \case
   Plus α β → Plus <$> step α <*> step β
   Pi α β → Pi <$> step α <*> pure β
+  Id α (m, n) → Id <$> step α <*> ((,) <$> step m <*> step n)
   Ann m α → Ann <$> step m <*> step α
   Inl m → Inl <$> step m
   Inr m → Inr <$> step m
